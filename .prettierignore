@@ -1,0 +1,8 @@
+dist/
+coverage/
+package-lock.json
+
+# Documentation owned by the human, not reformatted by tooling (see CLAUDE.md forbidden paths).
+spec/
+docs/
+.claude/
