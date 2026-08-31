@@ -6,8 +6,15 @@ import { ClientView } from './ClientView';
 import { AnalystView } from './AnalystView';
 import { SupervisorView } from './SupervisorView';
 import { FacilitatorView } from './FacilitatorView';
+import { ControlTowerView } from './ControlTowerView';
 
-const TABS: readonly ViewTab[] = ['client', 'analyst', 'supervisor', 'facilitator'];
+const TABS: readonly ViewTab[] = [
+  'client',
+  'analyst',
+  'supervisor',
+  'facilitator',
+  'control-tower',
+];
 
 export function AppShell() {
   const [tab, setTab] = useState<ViewTab>('client');
@@ -62,6 +69,9 @@ export function AppShell() {
         </div>
         <div hidden={tab !== 'facilitator'}>
           <FacilitatorView />
+        </div>
+        <div hidden={tab !== 'control-tower'}>
+          <ControlTowerView />
         </div>
       </main>
     </div>

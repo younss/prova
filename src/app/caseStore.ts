@@ -59,6 +59,21 @@ export interface CaseStoreSnapshot {
   readonly clock: ClockSnapshot;
 }
 
+/**
+ * Control Tower KPIs (spec §5.5). All averages/rates are `undefined` until at least one case has
+ * closed (AC5) — showing 0 would misleadingly imply a real (zero) result rather than "no data
+ * yet". Rates are 0..1. Rework only counts a supervisor's explicit refusal (E2's client
+ * loop-back is not implemented — see docs/plan.md open question F).
+ */
+export interface ControlTowerKpis {
+  readonly closedCaseCount: number;
+  readonly averageCycleTimeMs: number | undefined;
+  readonly averageHandoffsPerCase: number | undefined;
+  readonly reworkRate: number | undefined;
+  readonly doubleSignatureRate: number | undefined;
+  readonly loadByRole: { readonly analyst: number; readonly supervisor: number };
+}
+
 export interface CaseStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): CaseStoreSnapshot;
@@ -66,6 +81,7 @@ export interface CaseStore {
   getQueueForRole(role: Role): readonly CaseRecord[];
   getAuditLog(): AuditLog;
   getScenarioSteps(): readonly ScenarioStep[];
+  getKpis(): ControlTowerKpis;
   declareCase(input: DeclareCaseInput): CaseRecord;
   completeEvaluation(caseId: string, actor: string): void;
   proposeSettlement(caseId: string, proposedAmountDollars: number, actor: string): void;
@@ -201,6 +217,16 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     }
   }
 
+  /**
+   * Advances the clock by the CURRENT step's declared simulated duration (spec §3's "durée
+   * simulée" column applies to human steps too, not just automated ones) — without this, a
+   * case's cycle time would only ever reflect automated/third-party waits, never the work a
+   * human step is declared to take, making the Control Tower's cycle-time KPI incoherent (AC5).
+   */
+  function advanceClockForStep(stepId: string): void {
+    clock.advance(findStep(scenario.steps, stepId).simulatedDurationMs);
+  }
+
   function declareCase(input: DeclareCaseInput): CaseRecord {
     const id = `SIN-${String(nextCaseNumber).padStart(4, '0')}`;
     nextCaseNumber += 1;
@@ -212,6 +238,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
       complexityScore: 0,
       proposedAmountDollars: 0,
     });
+    advanceClockForStep('declaration');
     state = applyTransitionWithAudit(auditLog, scenario, state, 'submit-declaration', {
       caseId: id,
       actor: input.fullName,
@@ -235,6 +262,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
 
   function completeEvaluation(caseId: string, actor: string): void {
     const record = requireCase(caseId);
+    advanceClockForStep(record.state.stepId);
     const [transition] = getAvailableTransitions(scenario, record.state);
     if (!transition) {
       throw new Error(
@@ -253,6 +281,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
 
   function proposeSettlement(caseId: string, proposedAmountDollars: number, actor: string): void {
     const record = requireCase(caseId);
+    advanceClockForStep(record.state.stepId);
     const withAmount = updateContext(record.state, { proposedAmountDollars });
     const [transition] = getAvailableTransitions(scenario, withAmount);
     if (!transition) {
@@ -273,6 +302,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     if (!record.proposedByUserId) {
       throw new Error(`Case "${caseId}" has no proposing analyst on record yet.`);
     }
+    advanceClockForStep(record.state.stepId);
     const outcome = attemptSupervisorApproval(
       auditLog,
       scenario,
@@ -295,6 +325,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
       throw new Error('Un commentaire est obligatoire pour refuser une proposition (spec §4).');
     }
     const record = requireCase(caseId);
+    advanceClockForStep(record.state.stepId);
     const state = applyTransitionWithAudit(auditLog, scenario, record.state, 'supervisor-refuses', {
       caseId,
       actor: approverUserId,
@@ -307,6 +338,66 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
   function getQueueForRole(role: Role): readonly CaseRecord[] {
     const stepIds = QUEUE_STEP_IDS_BY_ROLE[role];
     return cases.filter((record) => stepIds.includes(record.state.stepId));
+  }
+
+  function isCaseClosed(record: CaseRecord): boolean {
+    return getAvailableTransitions(scenario, record.state).length === 0;
+  }
+
+  function getKpis(): ControlTowerKpis {
+    const loadByRole = {
+      analyst: getQueueForRole('analyst').length,
+      supervisor: getQueueForRole('supervisor').length,
+    };
+    const closedCases = cases.filter(isCaseClosed);
+    const closedCaseCount = closedCases.length;
+
+    if (closedCaseCount === 0) {
+      return {
+        closedCaseCount,
+        averageCycleTimeMs: undefined,
+        averageHandoffsPerCase: undefined,
+        reworkRate: undefined,
+        doubleSignatureRate: undefined,
+        loadByRole,
+      };
+    }
+
+    let totalCycleTimeMs = 0;
+    let totalHandoffs = 0;
+    let reworkCount = 0;
+    let doubleSignatureCount = 0;
+
+    for (const record of closedCases) {
+      const entries = auditLog.entriesForCase(record.id);
+      const first = entries[0];
+      const last = entries[entries.length - 1];
+      if (first && last) {
+        totalCycleTimeMs += last.simulatedTimestampMs - first.simulatedTimestampMs;
+      }
+
+      for (let i = 1; i < entries.length; i += 1) {
+        if (entries[i]!.actor !== entries[i - 1]!.actor) {
+          totalHandoffs += 1;
+        }
+      }
+
+      if (entries.some((entry) => entry.action === 'supervisor-refuses')) {
+        reworkCount += 1;
+      }
+      if (entries.some((entry) => entry.action === 'supervisor-approves')) {
+        doubleSignatureCount += 1;
+      }
+    }
+
+    return {
+      closedCaseCount,
+      averageCycleTimeMs: totalCycleTimeMs / closedCaseCount,
+      averageHandoffsPerCase: totalHandoffs / closedCaseCount,
+      reworkRate: reworkCount / closedCaseCount,
+      doubleSignatureRate: doubleSignatureCount / closedCaseCount,
+      loadByRole,
+    };
   }
 
   function generateNewCase(): CaseRecord {
@@ -358,6 +449,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     getQueueForRole,
     getAuditLog: () => auditLog,
     getScenarioSteps: () => scenario.steps,
+    getKpis,
     declareCase,
     completeEvaluation,
     proposeSettlement,

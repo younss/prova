@@ -8,13 +8,14 @@ export const ACTIVE_IDENTITY_OPTIONS: readonly string[] = FIRST_NAMES.slice(0, 5
   (firstName, index) => `${firstName} ${LAST_NAMES[index]}`,
 );
 
-/** The role switcher's tabs: the domain roles plus the facilitator control panel (spec §4.4),
- *  which isn't a queue-participant Role at the store level. */
-export type ViewTab = Role | 'facilitator';
+/** The role switcher's tabs: the domain roles plus the facilitator control panel (spec §4.4) and
+ *  Control Tower (spec §4.5), neither of which is a queue-participant Role at the store level. */
+export type ViewTab = Role | 'facilitator' | 'control-tower';
 
 export const VIEW_TAB_LABELS: Record<ViewTab, string> = {
   client: 'Client',
   analyst: 'Analyste sinistres',
   supervisor: 'Superviseur',
   facilitator: 'Animateur',
+  'control-tower': 'Tour de contrôle',
 };

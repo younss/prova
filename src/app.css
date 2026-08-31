@@ -75,3 +75,30 @@ button {
   color: #9a1010;
   font-weight: 600;
 }
+
+/* Spec §6 "lisibilité projecteur": the Control Tower is the view projected in a workshop room —
+   generous font sizes and strong contrast, distinct from the desk-facing role views. */
+#control-tower-title {
+  font-size: 2rem;
+}
+
+#control-tower-title ~ h3 {
+  font-size: 1.4rem;
+}
+
+#control-tower-title ~ ul li,
+#control-tower-title ~ table {
+  font-size: 1.15rem;
+}
+
+#control-tower-title ~ table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+#control-tower-title ~ table th,
+#control-tower-title ~ table td {
+  border: 1px solid #6b6b6b;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}

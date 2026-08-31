@@ -92,6 +92,17 @@ describe('createCaseStore — completeEvaluation', () => {
 
     expect(store.getCase(record.id)!.state.stepId).toBe('external-expertise');
   });
+
+  it('advances the clock by the evaluation step’s declared simulated duration (4h)', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+    const beforeMs = store.getSnapshot().clock.now; // 35_000 after triage (30s) + coverage-check (5s)
+
+    store.completeEvaluation(record.id, 'analyste-1');
+
+    const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+    expect(store.getSnapshot().clock.now).toBe(beforeMs + FOUR_HOURS_MS);
+  });
 });
 
 describe('createCaseStore — proposeSettlement', () => {
@@ -265,6 +276,78 @@ describe('createCaseStore — generateNewCase (spec §5.2, facilitator "Nouveau 
     expect(record.claimant.fullName.trim().length).toBeGreaterThan(0);
     expect(record.claimedAmountDollars).toBeGreaterThanOrEqual(800);
     expect(store.getCase(record.id)).toEqual(record);
+  });
+});
+
+describe('createCaseStore — getKpis (spec §5.5, AC5)', () => {
+  it('returns undefined averages and zero closedCaseCount when nothing is closed yet', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+
+    const kpis = store.getKpis();
+
+    expect(kpis.closedCaseCount).toBe(0);
+    expect(kpis.averageCycleTimeMs).toBeUndefined();
+    expect(kpis.averageHandoffsPerCase).toBeUndefined();
+    expect(kpis.reworkRate).toBeUndefined();
+    expect(kpis.doubleSignatureRate).toBeUndefined();
+    expect(kpis.loadByRole).toEqual({ analyst: 0, supervisor: 0 });
+  });
+
+  it('computes cycle time and handoffs for a single closed case from its own audit trail', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+    store.completeEvaluation(record.id, 'analyste-1');
+    store.proposeSettlement(record.id, 5_000, 'analyste-1');
+
+    const entries = store.getAuditLog().entriesForCase(record.id);
+    const expectedCycleTime =
+      entries[entries.length - 1]!.simulatedTimestampMs - entries[0]!.simulatedTimestampMs;
+    let expectedHandoffs = 0;
+    for (let i = 1; i < entries.length; i += 1) {
+      if (entries[i]!.actor !== entries[i - 1]!.actor) {
+        expectedHandoffs += 1;
+      }
+    }
+
+    const kpis = store.getKpis();
+    expect(kpis.closedCaseCount).toBe(1);
+    expect(kpis.averageCycleTimeMs).toBe(expectedCycleTime);
+    expect(kpis.averageHandoffsPerCase).toBe(expectedHandoffs);
+    expect(kpis.reworkRate).toBe(0);
+    expect(kpis.doubleSignatureRate).toBe(0);
+  });
+
+  it('counts a case that went through supervisor approval toward doubleSignatureRate', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+    store.completeEvaluation(record.id, 'analyste-1');
+    store.proposeSettlement(record.id, 15_000, 'analyste-1');
+    store.approveSupervisor(record.id, 'superviseur-1');
+
+    expect(store.getKpis().doubleSignatureRate).toBe(1);
+  });
+
+  it('counts a case that was refused (renvoi) toward reworkRate', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+    store.completeEvaluation(record.id, 'analyste-1');
+    store.proposeSettlement(record.id, 15_000, 'analyste-1');
+    store.refuseSupervisor(record.id, 'superviseur-1', 'Justificatifs insuffisants.');
+    store.proposeSettlement(record.id, 15_000, 'analyste-1');
+    store.approveSupervisor(record.id, 'superviseur-2');
+
+    expect(store.getKpis().reworkRate).toBe(1);
+  });
+
+  it('reflects live queue counts in loadByRole', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    store.declareCase(declarationInput); // sits at evaluation
+    const other = store.declareCase(declarationInput);
+    store.completeEvaluation(other.id, 'analyste-1');
+    store.proposeSettlement(other.id, 15_000, 'analyste-1'); // sits at supervisor-approval
+
+    const kpis = store.getKpis();
+    expect(kpis.loadByRole).toEqual({ analyst: 1, supervisor: 1 });
   });
 });
 
