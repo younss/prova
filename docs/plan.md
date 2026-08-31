@@ -80,7 +80,7 @@ Each phase gates on: its listed ACs passing, `npm run typecheck` and `npm run li
 - E1/E2/E3 injection — **shipped**, per the E/F/G decisions in §2:
   - E1: targeted case at external-expertise → clock advances by the simulated timeout, then auto-escalates to Supervisor at step 7 (bypassing 5/6); resolved via a dedicated "manual call" UI (no four-eyes check, since no analyst proposed the case).
   - E2: targeted case at evaluation → "waiting-on-client" sub-state; the Client view surfaces a "Renvoyer les documents" action that re-enters at step 1 and re-chains through triage/coverage-check.
-  - E3: 8 synthetic cases created at step 1 via the normal `generateNewCase()` path, auto-chained through 2–3 same as any organically-created case.
+  - E3: 8 synthetic cases created at step 1 via the normal `generateNewCase()` path, auto-chained through 2–3 same as any organically-created case, with coverage-check forced valid so all 8 reliably reach the analyst's queue (AC4's literal "8 dossiers") rather than a random few landing in `rejected`.
 - Closes **AC4**; AC2 already closed.
 
 ### Phase 6 — Control Tower + workshop help panel

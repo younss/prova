@@ -500,6 +500,19 @@ describe('createCaseStore — injectExceptionE3 (spec §3, §5.4, docs/plan.md i
       expect(entries[0]!.action).toBe('submit-declaration');
     }
   });
+
+  it("AC4: guarantees all 8 land in the analyst's queue, even with an otherwise-invalid coverage draw", () => {
+    // 0.99 would normally fail assignCoverageValidity's < 0.85 check and auto-reject every case.
+    const store = createCaseStore({ random: sequence(0.99) });
+
+    const spike = store.injectExceptionE3();
+
+    for (const record of spike) {
+      expect(store.getCase(record.id)!.state.stepId).toBe('evaluation');
+    }
+    expect(store.getQueueForRole('analyst')).toHaveLength(8);
+    expect(store.getKpis().loadByRole.analyst).toBe(8);
+  });
 });
 
 describe('createCaseStore — getScenarioExceptions', () => {

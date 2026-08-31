@@ -1,6 +1,7 @@
-// Analyst role view (spec §4.2): case queue + detail with the two actions this phase supports —
-// completing an evaluation, and proposing a settlement amount. "Renvoyer au client" is
-// intentionally omitted: its target state is open question F, unresolved until Phase 5.
+// Analyst role view (spec §4.2): case queue + detail with the two actions this role supports —
+// completing an evaluation, and proposing a settlement amount. Sending a case back to the client
+// over illegible documents is E2 (spec §5.4), a facilitator-injected exception rather than an
+// analyst self-service action — see FacilitatorView.
 import { useState } from 'react';
 import { useCaseStore, useCaseStoreSnapshot } from './useCaseStore';
 
@@ -61,7 +62,10 @@ function CaseDetail({ caseId, userId }: { caseId: string; userId: string }) {
       )}
 
       {record.state.stepId === 'external-expertise' && (
-        <p>En attente de l'expert externe (contrôles d'horloge à venir en phase 5).</p>
+        <p>
+          En attente de l'expert externe (retour automatique après 3 jours simulés — voir le panneau
+          animateur pour l'horloge, ou pour injecter E1 si l'expert ne répond pas).
+        </p>
       )}
 
       {record.state.stepId === 'settlement-proposal' && (
