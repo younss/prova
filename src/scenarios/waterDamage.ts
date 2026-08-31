@@ -190,6 +190,9 @@ export function createWaterDamageScenario(
         guard: (context) => !requiresSupervisorApproval(context),
       },
       { id: 'supervisor-approves', from: 'supervisor-approval', to: 'payment' },
+      // Spec §4: the Supervisor view needs an explicit "Refuser" action (mandatory comment,
+      // enforced by callers as the audit justification), distinct from a four-eyes block.
+      { id: 'supervisor-refuses', from: 'supervisor-approval', to: 'settlement-proposal' },
     ],
   };
 }

@@ -3,6 +3,7 @@ import {
   applyTransition,
   createCase,
   getAvailableTransitions,
+  updateContext,
   type StateMachineDefinition,
 } from '../../src/engine/stateMachine';
 
@@ -155,5 +156,33 @@ describe('applyTransition', () => {
     expect(() => applyTransition(draftReviewDone, state, 'submit-for-review')).toThrow(
       /guard rejected/,
     );
+  });
+});
+
+describe('updateContext', () => {
+  it('merges a partial patch into the context, leaving other fields untouched', () => {
+    const state = createCase(draftReviewDone, { wordCount: 10 });
+
+    const next = updateContext(state, { wordCount: 42 });
+
+    expect(next.context).toEqual({ wordCount: 42 });
+  });
+
+  it('does not mutate the original state', () => {
+    const state = createCase(draftReviewDone, { wordCount: 10 });
+
+    updateContext(state, { wordCount: 42 });
+
+    expect(state.context).toEqual({ wordCount: 10 });
+  });
+
+  it('leaves stepId and history unchanged', () => {
+    const state = createCase(draftReviewDone, { wordCount: 10 });
+    const inReview = applyTransition(draftReviewDone, state, 'submit-for-review');
+
+    const next = updateContext(inReview, { wordCount: 99 });
+
+    expect(next.stepId).toBe('review');
+    expect(next.history).toEqual(['draft', 'review']);
   });
 });

@@ -130,6 +130,23 @@ describe('createWaterDamageScenario', () => {
       state = applyTransition(scenario, state, 'supervisor-approves');
       expect(state.stepId).toBe('payment');
     });
+
+    it('lets the supervisor refuse a proposal, returning it to settlement-proposal', () => {
+      const scenario = createWaterDamageScenario();
+      let state = createCase(
+        scenario,
+        baseContext({ complexityScore: 10, proposedAmountDollars: 15_000 }),
+      );
+
+      state = applyTransition(scenario, state, 'submit-declaration');
+      state = applyTransition(scenario, state, 'complete-triage');
+      state = applyTransition(scenario, state, 'coverage-valid');
+      state = applyTransition(scenario, state, 'evaluation-skips-expertise');
+      state = applyTransition(scenario, state, 'proposal-requires-supervisor');
+
+      state = applyTransition(scenario, state, 'supervisor-refuses');
+      expect(state.stepId).toBe('settlement-proposal');
+    });
   });
 
   describe('AC7 — threshold lives in declarative data, not engine code', () => {

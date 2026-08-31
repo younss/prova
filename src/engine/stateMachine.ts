@@ -72,6 +72,22 @@ export function getAvailableTransitions<TContext>(
   );
 }
 
+/**
+ * Merges a partial patch into a case's context, leaving stepId/history untouched. A case's
+ * context is filled in progressively by different actors at different steps (e.g. a complexity
+ * score assigned at triage, an amount proposed at settlement) — createCase() only knows the
+ * starting values, so later steps need a way to enrich it.
+ */
+export function updateContext<TContext>(
+  state: CaseState<TContext>,
+  patch: Partial<TContext>,
+): CaseState<TContext> {
+  return {
+    ...state,
+    context: { ...state.context, ...patch },
+  };
+}
+
 export function applyTransition<TContext>(
   definition: StateMachineDefinition<TContext>,
   state: CaseState<TContext>,
