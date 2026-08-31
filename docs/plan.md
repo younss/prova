@@ -89,4 +89,4 @@ Each phase gates on: its listed ACs passing, `npm run typecheck` and `npm run li
 
 ---
 
-*This document tracks agreed decisions and phase gates only. It is not the spec — `spec/spec-repetiteur-flux-de-valeur.md` remains the source of truth for behavior; this file records how we're sequencing the build against it.*
+*This document tracks agreed decisions and phase gates only. It is not the spec — `spec/spec-repetiteur-flux-de-valeur.md` remains the source of truth for behavior; this file records how we're sequencing the build against it. For the spec's §9 deliverable #3 — the explicit list of every deviation from the spec, with justification — see `docs/deviations.md`.*
