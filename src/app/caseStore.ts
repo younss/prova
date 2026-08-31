@@ -197,6 +197,16 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
   }
 
   /**
+   * Lets a caller override an automated draw (currently only E3's coverage-valid guarantee —
+   * see injectExceptionE3) instead of leaving it to the synthetic random source. Complexity is
+   * never overridden: AC4 only promises the 8 cases reach the analyst's queue, and both
+   * evaluation and external-expertise count as that queue (QUEUE_STEP_IDS_BY_ROLE).
+   */
+  interface AutoAdvanceOverrides {
+    readonly forceCoverageValid?: boolean;
+  }
+
+  /**
    * Repeatedly assigns and fires automated steps (spec §3's "automatisé" actor type) until the
    * case reaches a step that waits on a human, or schedules a third-party-async step's return
    * on the clock (spec AC2).
@@ -204,6 +214,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
   function autoAdvance(
     initialState: CaseState<WaterDamageCaseContext>,
     caseId: string,
+    overrides: AutoAdvanceOverrides = {},
   ): CaseState<WaterDamageCaseContext> {
     let state = initialState;
     for (;;) {
@@ -219,7 +230,8 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
       if (state.stepId === 'triage') {
         state = updateContext(state, { complexityScore: assignComplexityScore(random) });
       } else if (state.stepId === 'coverage-check') {
-        state = updateContext(state, { coverageValid: assignCoverageValidity(random) });
+        const coverageValid = overrides.forceCoverageValid ?? assignCoverageValidity(random);
+        state = updateContext(state, { coverageValid });
       }
 
       clock.advance(step.simulatedDurationMs);
@@ -257,6 +269,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     caseId: string,
     actor: string,
     justification: string,
+    overrides: AutoAdvanceOverrides = {},
   ): CaseState<WaterDamageCaseContext> {
     advanceClockForStep('declaration');
     const submitted = applyTransitionWithAudit(auditLog, scenario, state, 'submit-declaration', {
@@ -265,10 +278,10 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
       justification,
       simulatedTimestampMs: clock.now(),
     });
-    return autoAdvance(submitted, caseId);
+    return autoAdvance(submitted, caseId, overrides);
   }
 
-  function declareCase(input: DeclareCaseInput): CaseRecord {
+  function declareCase(input: DeclareCaseInput, overrides: AutoAdvanceOverrides = {}): CaseRecord {
     const id = `SIN-${String(nextCaseNumber).padStart(4, '0')}`;
     nextCaseNumber += 1;
 
@@ -284,6 +297,7 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
       id,
       input.fullName,
       'Déclaration soumise via le formulaire.',
+      overrides,
     );
 
     const record: CaseRecord = {
@@ -502,11 +516,17 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     replaceCase(caseId, (current) => ({ ...current, state }));
   }
 
-  /** E3 (spec §3, §5.4): global — spawns VOLUME_SPIKE_CASE_COUNT synthetic cases via the normal
-   *  step-1 path (docs/plan.md item G), landing wherever their own triage/coverage draws send
-   *  them, same as generateNewCase(). */
+  /**
+   * E3 (spec §3, §5.4): global — spawns VOLUME_SPIKE_CASE_COUNT synthetic cases via the normal
+   * step-1 path (docs/plan.md item G). Coverage is forced valid so all of them clear
+   * coverage-check: AC4 promises "8 dossiers dans la file de l'analyste", and a random coverage
+   * draw could otherwise auto-reject a few before they ever reach the queue. Complexity stays
+   * random — both evaluation and external-expertise count as the analyst's queue either way.
+   */
   function injectExceptionE3(): readonly CaseRecord[] {
-    return Array.from({ length: VOLUME_SPIKE_CASE_COUNT }, () => generateNewCase());
+    return Array.from({ length: VOLUME_SPIKE_CASE_COUNT }, () =>
+      generateNewCase({ forceCoverageValid: true }),
+    );
   }
 
   function getQueueForRole(role: Role): readonly CaseRecord[] {
@@ -579,15 +599,18 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     };
   }
 
-  function generateNewCase(): CaseRecord {
+  function generateNewCase(overrides: AutoAdvanceOverrides = {}): CaseRecord {
     const generated = generateSyntheticCase(random);
-    return declareCase({
-      fullName: generated.claimant.fullName,
-      address: generated.claimant.address,
-      incidentDate: 'Générée par l’animateur',
-      description: generated.description,
-      claimedAmountDollars: generated.claimedAmountDollars,
-    });
+    return declareCase(
+      {
+        fullName: generated.claimant.fullName,
+        address: generated.claimant.address,
+        incidentDate: 'Générée par l’animateur',
+        description: generated.description,
+        claimedAmountDollars: generated.claimedAmountDollars,
+      },
+      overrides,
+    );
   }
 
   function playClock(): void {

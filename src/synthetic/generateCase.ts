@@ -1,8 +1,10 @@
 // Synthetic case generator (spec §5.2): produces a plausible Quebec claimant, a fictitious
 // address, a varied description, and a claimed amount in the spec's $800–$45,000 range. Scope
 // is intentionally limited to what plan.md's Phase 3 lists — complexity score, coverage
-// validity, and which step a case starts at are not part of this generator (the latter is
-// gated on open question G for Phase 5); this stays decoupled from the scenario's context shape.
+// validity, and which step a case starts at are not part of this generator. Per docs/plan.md
+// item G (resolved), E3's 8-case spike (src/app/caseStore.ts's injectExceptionE3) reuses this
+// generator unchanged, always starting cases at step 1 — this stays decoupled from the
+// scenario's context shape.
 import type { RandomSource } from './random';
 import {
   FIRST_NAMES,
