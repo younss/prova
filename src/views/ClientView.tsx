@@ -1,6 +1,9 @@
 // Client role view (spec §4.1): declaration form (5 fields + fake upload) then a live status
 // list of the cases declared from this browser session.
 import { useState, type FormEvent } from 'react';
+import type { ScenarioStep } from '../scenarios/types';
+import { CaseStatusBadge } from './CaseStatusBadge';
+import { formatCaseAge } from './caseAge';
 import { useCaseStore, useCaseStoreSnapshot } from './useCaseStore';
 
 interface DeclarationFormState {
@@ -22,7 +25,7 @@ const EMPTY_FORM: DeclarationFormState = {
 export function ClientView() {
   const store = useCaseStore();
   const snapshot = useCaseStoreSnapshot();
-  const stepLabelsById = useStepLabels();
+  const stepsById = useSteps();
   const [form, setForm] = useState<DeclarationFormState>(EMPTY_FORM);
   const [myCaseIds, setMyCaseIds] = useState<string[]>([]);
 
@@ -105,24 +108,31 @@ export function ClientView() {
       {myCases.length > 0 && (
         <div>
           <h3>Mes dossiers</h3>
-          <ul>
-            {myCases.map((record) => (
-              <li key={record.id}>
-                <strong>{record.id}</strong> ({record.incidentDate}) —{' '}
-                {stepLabelsById.get(record.state.stepId) ?? record.state.stepId}
-                {record.state.stepId === 'waiting-on-client' && (
-                  <>
-                    {' '}
-                    <span role="alert">
-                      Vos documents sont illisibles — veuillez les corriger et les renvoyer.
-                    </span>{' '}
-                    <button type="button" onClick={() => store.resubmitDocuments(record.id)}>
-                      Renvoyer les documents
-                    </button>
-                  </>
-                )}
-              </li>
-            ))}
+          <ul className="case-list">
+            {myCases.map((record) => {
+              const step = stepsById.get(record.state.stepId);
+              return (
+                <li key={record.id}>
+                  <span className="case-list-primary">
+                    <strong>{record.id}</strong> ({record.incidentDate})
+                  </span>
+                  {step && <CaseStatusBadge step={step} />}
+                  <span className="case-age">
+                    {formatCaseAge(store.getAuditLog(), record.id, snapshot.clock.now)}
+                  </span>
+                  {record.state.stepId === 'waiting-on-client' && (
+                    <div>
+                      <span role="alert">
+                        Vos documents sont illisibles — veuillez les corriger et les renvoyer.
+                      </span>{' '}
+                      <button type="button" onClick={() => store.resubmitDocuments(record.id)}>
+                        Renvoyer les documents
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -130,7 +140,7 @@ export function ClientView() {
   );
 }
 
-function useStepLabels(): Map<string, string> {
+function useSteps(): Map<string, ScenarioStep> {
   const store = useCaseStore();
-  return new Map(store.getScenarioSteps().map((step) => [step.id, step.label]));
+  return new Map(store.getScenarioSteps().map((step) => [step.id, step]));
 }

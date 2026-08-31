@@ -3,6 +3,8 @@
 // over illegible documents is E2 (spec §5.4), a facilitator-injected exception rather than an
 // analyst self-service action — see FacilitatorView.
 import { useState } from 'react';
+import { CaseStatusBadge } from './CaseStatusBadge';
+import { formatCaseAge } from './caseAge';
 import { useCaseStore, useCaseStoreSnapshot } from './useCaseStore';
 
 export interface AnalystViewProps {
@@ -11,8 +13,9 @@ export interface AnalystViewProps {
 
 export function AnalystView({ userId }: AnalystViewProps) {
   const store = useCaseStore();
-  useCaseStoreSnapshot(); // subscribes this component to store changes for re-rendering
+  const snapshot = useCaseStoreSnapshot();
   const queue = store.getQueueForRole('analyst');
+  const stepsById = new Map(store.getScenarioSteps().map((step) => [step.id, step]));
   const [selectedCaseId, setSelectedCaseId] = useState<string | undefined>(undefined);
   const selectedCase = queue.find((record) => record.id === selectedCaseId);
 
@@ -20,14 +23,23 @@ export function AnalystView({ userId }: AnalystViewProps) {
     <section aria-labelledby="analyst-view-title">
       <h2 id="analyst-view-title">File de l'analyste</h2>
       {queue.length === 0 && <p>Aucun dossier en attente.</p>}
-      <ul>
-        {queue.map((record) => (
-          <li key={record.id}>
-            <button type="button" onClick={() => setSelectedCaseId(record.id)}>
-              {record.id} — {record.claimant.fullName} ({record.state.stepId})
-            </button>
-          </li>
-        ))}
+      <ul className="case-list">
+        {queue.map((record) => {
+          const step = stepsById.get(record.state.stepId);
+          return (
+            <li key={record.id}>
+              <button type="button" onClick={() => setSelectedCaseId(record.id)}>
+                <span className="case-list-primary">
+                  {record.id} — {record.claimant.fullName}
+                </span>
+                {step && <CaseStatusBadge step={step} />}
+                <span className="case-age">
+                  {formatCaseAge(store.getAuditLog(), record.id, snapshot.clock.now)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
       {selectedCase && (
@@ -39,6 +51,7 @@ export function AnalystView({ userId }: AnalystViewProps) {
 
 function CaseDetail({ caseId, userId }: { caseId: string; userId: string }) {
   const store = useCaseStore();
+  const snapshot = useCaseStoreSnapshot();
   const record = store.getCase(caseId);
   const [proposedAmount, setProposedAmount] = useState('');
 
@@ -46,11 +59,17 @@ function CaseDetail({ caseId, userId }: { caseId: string; userId: string }) {
     return null;
   }
 
+  const step = store.getScenarioSteps().find((candidate) => candidate.id === record.state.stepId);
+
   return (
     <div aria-labelledby={`case-detail-${caseId}`}>
       <h3 id={`case-detail-${caseId}`}>
         Dossier {record.id} — {record.claimant.fullName}
+        {step && <CaseStatusBadge step={step} />}
       </h3>
+      <p className="case-age">
+        {formatCaseAge(store.getAuditLog(), record.id, snapshot.clock.now)}
+      </p>
       <p>{record.claimant.address}</p>
       <p>{record.description}</p>
       <p>Montant réclamé : {record.claimedAmountDollars} $</p>

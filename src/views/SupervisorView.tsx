@@ -1,6 +1,8 @@
 // Supervisor role view (spec §4.3, §5.6, AC3): four-eyes approval queue with mandatory-comment
 // refusal. A blocked (same-analyst) attempt shows the explicit refusal message inline.
 import { useState } from 'react';
+import { CaseStatusBadge } from './CaseStatusBadge';
+import { formatCaseAge } from './caseAge';
 import { useCaseStore, useCaseStoreSnapshot } from './useCaseStore';
 
 export interface SupervisorViewProps {
@@ -9,8 +11,9 @@ export interface SupervisorViewProps {
 
 export function SupervisorView({ userId }: SupervisorViewProps) {
   const store = useCaseStore();
-  useCaseStoreSnapshot();
+  const snapshot = useCaseStoreSnapshot();
   const queue = store.getQueueForRole('supervisor');
+  const stepsById = new Map(store.getScenarioSteps().map((step) => [step.id, step]));
   const [selectedCaseId, setSelectedCaseId] = useState<string | undefined>(undefined);
   const selectedCase = queue.find((record) => record.id === selectedCaseId);
 
@@ -18,17 +21,26 @@ export function SupervisorView({ userId }: SupervisorViewProps) {
     <section aria-labelledby="supervisor-view-title">
       <h2 id="supervisor-view-title">Approbations quatre yeux</h2>
       {queue.length === 0 && <p>Aucune approbation en attente.</p>}
-      <ul>
-        {queue.map((record) => (
-          <li key={record.id}>
-            <button type="button" onClick={() => setSelectedCaseId(record.id)}>
-              {record.id} —{' '}
-              {record.proposedByUserId
-                ? `${record.state.context.proposedAmountDollars} $ (proposé par ${record.proposedByUserId})`
-                : 'escaladé (E1) — aucun montant proposé'}
-            </button>
-          </li>
-        ))}
+      <ul className="case-list">
+        {queue.map((record) => {
+          const step = stepsById.get(record.state.stepId);
+          return (
+            <li key={record.id}>
+              <button type="button" onClick={() => setSelectedCaseId(record.id)}>
+                <span className="case-list-primary">
+                  {record.id} —{' '}
+                  {record.proposedByUserId
+                    ? `${record.state.context.proposedAmountDollars} $ (proposé par ${record.proposedByUserId})`
+                    : 'escaladé (E1) — aucun montant proposé'}
+                </span>
+                {step && <CaseStatusBadge step={step} />}
+                <span className="case-age">
+                  {formatCaseAge(store.getAuditLog(), record.id, snapshot.clock.now)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
       {selectedCase && (

@@ -8,6 +8,27 @@
     sans-serif;
   color: #1a1a1a;
   background-color: #ffffff;
+  /* Default accent (spec §5.7: role-distinct identity); [data-role] below overrides it per tab. */
+  --accent: #1a4d8f;
+  --accent-contrast: #ffffff;
+}
+
+/* Role-distinct visual identity (spec §5.7): a consistent accent color per role, so switching
+   tabs is recognizable without reading text. Applied to [data-role] on AppShell's root element. */
+[data-role='client'] {
+  --accent: #0f766e;
+}
+[data-role='analyst'] {
+  --accent: #1d4ed8;
+}
+[data-role='supervisor'] {
+  --accent: #7c3aed;
+}
+[data-role='facilitator'] {
+  --accent: #b45309;
+}
+[data-role='control-tower'] {
+  --accent: #0f172a;
 }
 
 body {
@@ -20,9 +41,27 @@ main {
   padding: 1.5rem;
 }
 
+/* spec §5.7: reinforces the role-distinct accent on the one heading every view has, on top of
+   the header border and the active nav button. */
+main section > h2 {
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 0.3rem;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
 header {
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid #d0d0d0;
+  border-bottom: 3px solid var(--accent);
+  transition: border-color 0.2s ease;
+}
+
+.simulated-clock {
+  margin: 0.25rem 0 0;
+  font-variant-numeric: tabular-nums;
+  color: #44403c;
 }
 
 nav[aria-label='Sélecteur de rôle'] {
@@ -41,9 +80,9 @@ nav[aria-label='Sélecteur de rôle'] button {
 }
 
 nav[aria-label='Sélecteur de rôle'] button[aria-pressed='true'] {
-  background: #1a4d8f;
-  color: #ffffff;
-  border-color: #1a4d8f;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
 }
 
 .form-field {
@@ -101,4 +140,142 @@ button {
   border: 1px solid #6b6b6b;
   padding: 0.4rem 0.6rem;
   text-align: left;
+}
+
+/* Case status badge (spec §5.7): a colored badge per case reflecting its current step. */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-badge--neutral {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.status-badge--active {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.status-badge--waiting {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge--success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge--danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Case list rows (Client/Analyst/Supervisor queues, spec §5.7): each row groups the case's
+   identifying text, its status badge, and its simulated age. */
+.case-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.case-list li button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 0.375rem;
+  background: #fafafa;
+  cursor: pointer;
+  text-align: left;
+}
+
+.case-list li button:hover {
+  border-color: var(--accent);
+}
+
+.case-list-primary {
+  flex: 1;
+}
+
+.case-age {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+/* Flow map (spec §5.5/§5.7): the scenario's steps in a row, each with a live count badge that
+   pulses when it changes — the count's key={count} remount (ControlTowerView) restarts this
+   animation, giving the "animée quand un dossier avance" effect without a JS animation library. */
+.flow-map {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.flow-map-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.75rem 0.5rem;
+  border-radius: 0.5rem;
+  min-width: 7rem;
+  border: 1px solid transparent;
+}
+
+.flow-map-step--neutral {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.flow-map-step--active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.flow-map-step--waiting {
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
+.flow-map-step--success {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.flow-map-step--danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.flow-map-step-label {
+  font-size: 0.85rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.flow-map-step-count {
+  font-size: 1.75rem;
+  font-weight: 700;
+  animation: flow-map-count-pulse 0.4s ease;
+}
+
+@keyframes flow-map-count-pulse {
+  0% {
+    transform: scale(1.5);
+  }
+  100% {
+    transform: scale(1);
+  }
 }

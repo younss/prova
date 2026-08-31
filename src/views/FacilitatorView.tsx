@@ -3,7 +3,6 @@
 // target a single selected case; E3 is global.
 import { useEffect, useState } from 'react';
 import { CLOCK_SPEEDS } from '../engine/clock';
-import { formatSimulatedDuration } from './formatSimulatedDuration';
 import { useCaseStore, useCaseStoreSnapshot, useResetStore } from './useCaseStore';
 
 const REAL_TICK_INTERVAL_MS = 200;
@@ -49,10 +48,8 @@ export function FacilitatorView({ userId }: FacilitatorViewProps) {
       <h2 id="facilitator-view-title">Panneau animateur</h2>
 
       <div>
-        <p>
-          Temps simulé écoulé : {formatSimulatedDuration(snapshot.clock.now)} — ×
-          {snapshot.clock.speed} ({snapshot.clock.isPlaying ? 'Lecture' : 'Pause'})
-        </p>
+        {/* The simulated clock itself is shown persistently in AppShell's header (spec §5.7) —
+            just the controls live here. */}
         <button type="button" onClick={() => store.playClock()} disabled={snapshot.clock.isPlaying}>
           Lecture
         </button>

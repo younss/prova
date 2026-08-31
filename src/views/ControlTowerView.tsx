@@ -2,6 +2,7 @@
 // audit trail with JSON export, and the collapsible "Mode d'emploi atelier" panel. Spec §6 asks
 // for "lisibilité projecteur" (generous font sizes, strong contrast) — see app.css.
 import { useState } from 'react';
+import { getStatusVariant } from './caseStatus';
 import { formatSimulatedDuration } from './formatSimulatedDuration';
 import { useCaseStore, useCaseStoreSnapshot } from './useCaseStore';
 
@@ -69,16 +70,25 @@ export function ControlTowerView() {
       </details>
 
       <h3>Carte du flux</h3>
-      <ul>
+      <div className="flow-map" role="list">
         {steps.map((step) => {
           const count = snapshot.cases.filter((record) => record.state.stepId === step.id).length;
           return (
-            <li key={step.id}>
-              {step.label} — <strong>{count}</strong>
-            </li>
+            <div
+              key={step.id}
+              role="listitem"
+              className={`flow-map-step flow-map-step--${getStatusVariant(step)}`}
+            >
+              <span className="flow-map-step-label">{step.label}</span>
+              {/* key={count} remounts the badge whenever it changes, restarting the CSS
+                  animation — spec §5.5's "animée quand un dossier avance", no JS/library needed. */}
+              <span key={count} className="flow-map-step-count">
+                {count}
+              </span>
+            </div>
           );
         })}
-      </ul>
+      </div>
 
       <h3>KPIs</h3>
       <ul>
