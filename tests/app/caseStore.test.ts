@@ -351,6 +351,167 @@ describe('createCaseStore — getKpis (spec §5.5, AC5)', () => {
   });
 });
 
+describe('createCaseStore — injectExceptionE2 (spec §3, §5.4, docs/plan.md item F)', () => {
+  it('routes an evaluation-stage case to waiting-on-client and logs it', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+    expect(record.state.stepId).toBe('evaluation');
+
+    store.injectExceptionE2(record.id, 'Animatrice');
+
+    expect(store.getCase(record.id)!.state.stepId).toBe('waiting-on-client');
+    const entries = store.getAuditLog().entriesForCase(record.id);
+    expect(entries[entries.length - 1]!.action).toBe('exception-e2-retouche');
+  });
+
+  it('refuses to target a case that is not at evaluation', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+    store.completeEvaluation(record.id, 'analyste-1'); // now at settlement-proposal
+
+    expect(() => store.injectExceptionE2(record.id, 'Animatrice')).toThrow();
+  });
+
+  it('counts an E2-affected case toward reworkRate once closed', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+    store.injectExceptionE2(record.id, 'Animatrice');
+    store.resubmitDocuments(record.id);
+    store.completeEvaluation(record.id, 'analyste-1');
+    store.proposeSettlement(record.id, 5_000, 'analyste-1');
+
+    expect(store.getCase(record.id)!.state.stepId).toBe('payment');
+    expect(store.getKpis().reworkRate).toBe(1);
+  });
+});
+
+describe('createCaseStore — resubmitDocuments (spec §5.4, docs/plan.md item F)', () => {
+  it('sends the case back through declaration -> triage -> coverage-check -> evaluation', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+    store.injectExceptionE2(record.id, 'Animatrice');
+
+    store.resubmitDocuments(record.id);
+
+    expect(store.getCase(record.id)!.state.stepId).toBe('evaluation');
+    const actions = store
+      .getAuditLog()
+      .entriesForCase(record.id)
+      .map((entry) => entry.action);
+    expect(actions).toEqual([
+      'submit-declaration',
+      'complete-triage',
+      'coverage-valid',
+      'exception-e2-retouche',
+      'client-resubmits',
+      'submit-declaration',
+      'complete-triage',
+      'coverage-valid',
+    ]);
+  });
+
+  it('refuses to resubmit a case that is not waiting on the client', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput);
+
+    expect(() => store.resubmitDocuments(record.id)).toThrow();
+  });
+});
+
+describe('createCaseStore — injectExceptionE1 (spec §3, §5.4, docs/plan.md item E)', () => {
+  function caseAtExternalExpertise(store: ReturnType<typeof createCaseStore>) {
+    const record = store.declareCase(declarationInput); // high complexity -> expertise
+    store.completeEvaluation(record.id, 'analyste-1');
+    return record.id;
+  }
+
+  it('escalates straight to supervisor-approval with no proposing analyst on record', () => {
+    const store = createCaseStore({ random: sequence(0.8, 0) });
+    const caseId = caseAtExternalExpertise(store);
+
+    store.injectExceptionE1(caseId, 'Animatrice');
+
+    const record = store.getCase(caseId)!;
+    expect(record.state.stepId).toBe('supervisor-approval');
+    expect(record.proposedByUserId).toBeUndefined();
+  });
+
+  it('advances the shared clock by the simulated timeout and logs the escalation', () => {
+    const store = createCaseStore({ random: sequence(0.8, 0) });
+    const caseId = caseAtExternalExpertise(store);
+    const beforeMs = store.getSnapshot().clock.now;
+
+    store.injectExceptionE1(caseId, 'Animatrice');
+
+    const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
+    expect(store.getSnapshot().clock.now).toBe(beforeMs + FIVE_DAYS_MS);
+    const entries = store.getAuditLog().entriesForCase(caseId);
+    expect(entries[entries.length - 1]!.action).toBe('exception-e1-escalation');
+  });
+
+  it('cancels the pending normal auto-resolution so it cannot fire after escalation', () => {
+    const store = createCaseStore({ random: sequence(0.8, 0) });
+    const caseId = caseAtExternalExpertise(store);
+
+    store.injectExceptionE1(caseId, 'Animatrice');
+    store.advanceToNextEvent(); // would resolve to settlement-proposal if the old timer still fired
+
+    expect(store.getCase(caseId)!.state.stepId).toBe('supervisor-approval');
+  });
+
+  it('refuses to target a case that is not at external-expertise', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput); // low complexity -> evaluation
+
+    expect(() => store.injectExceptionE1(record.id, 'Animatrice')).toThrow();
+  });
+});
+
+describe('createCaseStore — resolveEscalation (spec §5.4/§5.6, docs/plan.md item E)', () => {
+  it('sets the amount and closes the case without a four-eyes check', () => {
+    const store = createCaseStore({ random: sequence(0.8, 0) });
+    const record = store.declareCase(declarationInput);
+    store.completeEvaluation(record.id, 'analyste-1');
+    store.injectExceptionE1(record.id, 'Animatrice');
+
+    store.resolveEscalation(record.id, 20_000, 'superviseur-1');
+
+    expect(store.getCase(record.id)!.state.stepId).toBe('payment');
+  });
+
+  it('refuses when the case is not an E1-escalated case awaiting a manual decision', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    const record = store.declareCase(declarationInput); // sits at evaluation
+
+    expect(() => store.resolveEscalation(record.id, 5_000, 'superviseur-1')).toThrow();
+  });
+});
+
+describe('createCaseStore — injectExceptionE3 (spec §3, §5.4, docs/plan.md item G)', () => {
+  it('generates 8 synthetic cases via the normal step-1 path', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+
+    const spike = store.injectExceptionE3();
+
+    expect(spike).toHaveLength(8);
+    expect(store.getSnapshot().cases).toHaveLength(8);
+    for (const record of spike) {
+      const entries = store.getAuditLog().entriesForCase(record.id);
+      expect(entries[0]!.action).toBe('submit-declaration');
+    }
+  });
+});
+
+describe('createCaseStore — getScenarioExceptions', () => {
+  it('exposes the three spec exceptions as declarative data', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+
+    const exceptions = store.getScenarioExceptions();
+
+    expect(exceptions.map((exception) => exception.id)).toEqual(['E1', 'E2', 'E3']);
+  });
+});
+
 describe('createCaseStore — subscribe/getSnapshot', () => {
   it('notifies subscribers and returns a new snapshot after a mutation', () => {
     const store = createCaseStore({ random: sequence(0, 0) });

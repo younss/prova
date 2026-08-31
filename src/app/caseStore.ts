@@ -13,8 +13,13 @@ import { createSimulatedClock, type ClockSpeed } from '../engine/clock';
 import { createAuditLog, type AuditEntry, type AuditLog } from '../audit/auditLog';
 import { applyTransitionWithAudit, attemptSupervisorApproval } from '../audit/caseAuditTrail';
 import type { FourEyesCheckResult } from '../audit/caseAuditTrail';
-import { createWaterDamageScenario, type WaterDamageCaseContext } from '../scenarios/waterDamage';
-import type { ScenarioStep } from '../scenarios/types';
+import {
+  createWaterDamageScenario,
+  EXPERT_NON_RESPONSE_TIMEOUT_MS,
+  VOLUME_SPIKE_CASE_COUNT,
+  type WaterDamageCaseContext,
+} from '../scenarios/waterDamage';
+import type { ScenarioException, ScenarioStep } from '../scenarios/types';
 import { createSeededRandom, type RandomSource } from '../synthetic/random';
 import { assignComplexityScore, assignCoverageValidity } from '../synthetic/assessCase';
 import { generateSyntheticCase } from '../synthetic/generateCase';
@@ -62,8 +67,8 @@ export interface CaseStoreSnapshot {
 /**
  * Control Tower KPIs (spec §5.5). All averages/rates are `undefined` until at least one case has
  * closed (AC5) — showing 0 would misleadingly imply a real (zero) result rather than "no data
- * yet". Rates are 0..1. Rework only counts a supervisor's explicit refusal (E2's client
- * loop-back is not implemented — see docs/plan.md open question F).
+ * yet". Rates are 0..1. Rework counts a case that either was refused by a supervisor (a "renvoi")
+ * or was sent through the E2 retouche loop, per spec §5.5's "dossiers ayant subi E2 ou un renvoi".
  */
 export interface ControlTowerKpis {
   readonly closedCaseCount: number;
@@ -81,12 +86,27 @@ export interface CaseStore {
   getQueueForRole(role: Role): readonly CaseRecord[];
   getAuditLog(): AuditLog;
   getScenarioSteps(): readonly ScenarioStep[];
+  getScenarioExceptions(): readonly ScenarioException[];
   getKpis(): ControlTowerKpis;
   declareCase(input: DeclareCaseInput): CaseRecord;
   completeEvaluation(caseId: string, actor: string): void;
   proposeSettlement(caseId: string, proposedAmountDollars: number, actor: string): void;
   approveSupervisor(caseId: string, approverUserId: string): FourEyesCheckResult;
   refuseSupervisor(caseId: string, approverUserId: string, comment: string): void;
+  /**
+   * Resolves a case escalated by E1 (no proposing analyst on record — see injectExceptionE1):
+   * the supervisor sets the amount and approves in one manual decision. No four-eyes check
+   * applies — there is no analyst identity to separate from (spec §5.4/§5.6, docs/plan.md item E).
+   */
+  resolveEscalation(caseId: string, proposedAmountDollars: number, approverUserId: string): void;
+  /** The client resubmits after an E2 retouche loop (spec §5.4, docs/plan.md item F). */
+  resubmitDocuments(caseId: string): void;
+  /** E1 (spec §3, §5.4): targets a case waiting on external expertise. */
+  injectExceptionE1(caseId: string, actor: string): void;
+  /** E2 (spec §3, §5.4): targets a case under analyst evaluation. */
+  injectExceptionE2(caseId: string, actor: string): void;
+  /** E3 (spec §3, §5.4): global — generates VOLUME_SPIKE_CASE_COUNT synthetic cases at once. */
+  injectExceptionE3(): readonly CaseRecord[];
   /** Generates a synthetic case (spec §5.2's "Nouveau dossier" facilitator button). */
   generateNewCase(): CaseRecord;
   playClock(): void;
@@ -227,25 +247,44 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     clock.advance(findStep(scenario.steps, stepId).simulatedDurationMs);
   }
 
+  /**
+   * Submits (or resubmits, after an E2 retouche loop) a "declaration" step and auto-advances —
+   * the shared core of declareCase() and resubmitDocuments(), since spec §5.4's E2 effect is
+   * defined as "re-enters at step 1", i.e. the exact same path a brand-new case takes.
+   */
+  function submitDeclarationAndAutoAdvance(
+    state: CaseState<WaterDamageCaseContext>,
+    caseId: string,
+    actor: string,
+    justification: string,
+  ): CaseState<WaterDamageCaseContext> {
+    advanceClockForStep('declaration');
+    const submitted = applyTransitionWithAudit(auditLog, scenario, state, 'submit-declaration', {
+      caseId,
+      actor,
+      justification,
+      simulatedTimestampMs: clock.now(),
+    });
+    return autoAdvance(submitted, caseId);
+  }
+
   function declareCase(input: DeclareCaseInput): CaseRecord {
     const id = `SIN-${String(nextCaseNumber).padStart(4, '0')}`;
     nextCaseNumber += 1;
 
     // Placeholder values: overwritten by autoAdvance() before any guard reads them, since the
     // submit-declaration -> triage transition below is unguarded.
-    let state = createCase(scenario, {
+    const initialState = createCase(scenario, {
       coverageValid: false,
       complexityScore: 0,
       proposedAmountDollars: 0,
     });
-    advanceClockForStep('declaration');
-    state = applyTransitionWithAudit(auditLog, scenario, state, 'submit-declaration', {
-      caseId: id,
-      actor: input.fullName,
-      justification: 'Déclaration soumise via le formulaire.',
-      simulatedTimestampMs: clock.now(),
-    });
-    state = autoAdvance(state, id);
+    const state = submitDeclarationAndAutoAdvance(
+      initialState,
+      id,
+      input.fullName,
+      'Déclaration soumise via le formulaire.',
+    );
 
     const record: CaseRecord = {
       id,
@@ -335,6 +374,141 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     replaceCase(caseId, (current) => ({ ...current, state, proposedByUserId: undefined }));
   }
 
+  /**
+   * Resolves a case escalated by injectExceptionE1(): it arrives at supervisor-approval with no
+   * proposedByUserId, since no analyst ever proposed an amount (docs/plan.md item E — the
+   * escalation bypasses steps 5/6 entirely). The supervisor sets the amount and approves in one
+   * manual decision; the normal four-eyes check (checkFourEyesSeparation) does not apply here,
+   * since there is no analyst identity to separate the approver from.
+   */
+  function resolveEscalation(
+    caseId: string,
+    proposedAmountDollars: number,
+    approverUserId: string,
+  ): void {
+    const record = requireCase(caseId);
+    if (record.state.stepId !== 'supervisor-approval' || record.proposedByUserId) {
+      throw new Error(
+        `Case "${caseId}" is not an E1-escalated case awaiting a manual supervisor decision.`,
+      );
+    }
+    advanceClockForStep(record.state.stepId);
+    const withAmount = updateContext(record.state, { proposedAmountDollars });
+    const transitioned = applyTransitionWithAudit(
+      auditLog,
+      scenario,
+      withAmount,
+      'supervisor-approves',
+      {
+        caseId,
+        actor: approverUserId,
+        justification:
+          `Décision manuelle du superviseur suite à l'escalade E1 — montant fixé à ` +
+          `${proposedAmountDollars} $ par ${approverUserId} (aucun contrôle quatre yeux ` +
+          "applicable : aucun analyste n'a proposé ce dossier).",
+        simulatedTimestampMs: clock.now(),
+      },
+    );
+    const state = autoAdvance(transitioned, caseId);
+    replaceCase(caseId, (current) => ({ ...current, state, proposedByUserId: approverUserId }));
+  }
+
+  /** The client resubmits after an E2 retouche loop (spec §5.4, docs/plan.md item F). */
+  function resubmitDocuments(caseId: string): void {
+    const record = requireCase(caseId);
+    if (record.state.stepId !== 'waiting-on-client') {
+      throw new Error(
+        `Case "${caseId}" is not waiting on the client (currently at "${record.state.stepId}").`,
+      );
+    }
+    const actor = record.claimant.fullName;
+    const backAtDeclaration = applyTransitionWithAudit(
+      auditLog,
+      scenario,
+      record.state,
+      'client-resubmits',
+      {
+        caseId,
+        actor,
+        justification: 'Documents corrigés renvoyés par le client.',
+        simulatedTimestampMs: clock.now(),
+      },
+    );
+    const state = submitDeclarationAndAutoAdvance(
+      backAtDeclaration,
+      caseId,
+      actor,
+      'Nouvelle déclaration soumise après correction des documents.',
+    );
+    replaceCase(caseId, (current) => ({ ...current, state }));
+  }
+
+  /**
+   * E1 (spec §3, §5.4): the expert doesn't respond within the simulated timeout — cancels the
+   * pending normal auto-resolution (scheduleThirdPartyResolution) so it can't fire later on a
+   * case that has since moved on, advances the shared clock by the timeout (spec's "5 jours
+   * simulés"), then escalates straight to the supervisor (docs/plan.md item E).
+   */
+  function injectExceptionE1(caseId: string, actor: string): void {
+    const record = requireCase(caseId);
+    if (record.state.stepId !== 'external-expertise') {
+      throw new Error(
+        `E1 ne peut cibler qu'un dossier en attente d'expertise externe (dossier "${caseId}" ` +
+          `est à l'étape "${record.state.stepId}").`,
+      );
+    }
+    clock.cancel(`external-expertise-${caseId}`);
+    clock.advance(EXPERT_NON_RESPONSE_TIMEOUT_MS);
+    const currentState = requireCase(caseId).state;
+    const transitioned = applyTransitionWithAudit(
+      auditLog,
+      scenario,
+      currentState,
+      'exception-e1-escalation',
+      {
+        caseId,
+        actor,
+        justification:
+          "L'expert externe n'a pas répondu dans le délai simulé de 5 jours — escalade " +
+          'automatique vers le superviseur (E1).',
+        simulatedTimestampMs: clock.now(),
+      },
+    );
+    const state = autoAdvance(transitioned, caseId);
+    replaceCase(caseId, (current) => ({ ...current, state }));
+  }
+
+  /** E2 (spec §3, §5.4): targets a case under analyst evaluation (docs/plan.md item F). */
+  function injectExceptionE2(caseId: string, actor: string): void {
+    const record = requireCase(caseId);
+    if (record.state.stepId !== 'evaluation') {
+      throw new Error(
+        `E2 ne peut cibler qu'un dossier en cours d'évaluation (dossier "${caseId}" est à ` +
+          `l'étape "${record.state.stepId}").`,
+      );
+    }
+    const state = applyTransitionWithAudit(
+      auditLog,
+      scenario,
+      record.state,
+      'exception-e2-retouche',
+      {
+        caseId,
+        actor,
+        justification: 'Documents illisibles — retour au client pour correction (E2).',
+        simulatedTimestampMs: clock.now(),
+      },
+    );
+    replaceCase(caseId, (current) => ({ ...current, state }));
+  }
+
+  /** E3 (spec §3, §5.4): global — spawns VOLUME_SPIKE_CASE_COUNT synthetic cases via the normal
+   *  step-1 path (docs/plan.md item G), landing wherever their own triage/coverage draws send
+   *  them, same as generateNewCase(). */
+  function injectExceptionE3(): readonly CaseRecord[] {
+    return Array.from({ length: VOLUME_SPIKE_CASE_COUNT }, () => generateNewCase());
+  }
+
   function getQueueForRole(role: Role): readonly CaseRecord[] {
     const stepIds = QUEUE_STEP_IDS_BY_ROLE[role];
     return cases.filter((record) => stepIds.includes(record.state.stepId));
@@ -382,7 +556,12 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
         }
       }
 
-      if (entries.some((entry) => entry.action === 'supervisor-refuses')) {
+      if (
+        entries.some(
+          (entry) =>
+            entry.action === 'supervisor-refuses' || entry.action === 'exception-e2-retouche',
+        )
+      ) {
         reworkCount += 1;
       }
       if (entries.some((entry) => entry.action === 'supervisor-approves')) {
@@ -449,12 +628,18 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     getQueueForRole,
     getAuditLog: () => auditLog,
     getScenarioSteps: () => scenario.steps,
+    getScenarioExceptions: () => scenario.exceptions,
     getKpis,
     declareCase,
     completeEvaluation,
     proposeSettlement,
     approveSupervisor,
     refuseSupervisor,
+    resolveEscalation,
+    resubmitDocuments,
+    injectExceptionE1,
+    injectExceptionE2,
+    injectExceptionE3,
     generateNewCase,
     playClock,
     pauseClock,

@@ -110,6 +110,17 @@ export function ClientView() {
               <li key={record.id}>
                 <strong>{record.id}</strong> ({record.incidentDate}) —{' '}
                 {stepLabelsById.get(record.state.stepId) ?? record.state.stepId}
+                {record.state.stepId === 'waiting-on-client' && (
+                  <>
+                    {' '}
+                    <span role="alert">
+                      Vos documents sont illisibles — veuillez les corriger et les renvoyer.
+                    </span>{' '}
+                    <button type="button" onClick={() => store.resubmitDocuments(record.id)}>
+                      Renvoyer les documents
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>

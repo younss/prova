@@ -68,7 +68,7 @@ export function AppShell() {
           <SupervisorView userId={userId} />
         </div>
         <div hidden={tab !== 'facilitator'}>
-          <FacilitatorView />
+          <FacilitatorView userId={userId} />
         </div>
         <div hidden={tab !== 'control-tower'}>
           <ControlTowerView />

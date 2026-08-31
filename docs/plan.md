@@ -1,6 +1,6 @@
 # Prova — Implementation Plan (v0.1 prototype)
 
-> Status: Phases and acceptance-criteria mapping agreed. Items C–G below are still open — do not start Phase 5 work that depends on them until they're answered. Phase 1 can start once this plan is approved.
+> Status: Phases and acceptance-criteria mapping agreed. Items C–G resolved 2026-08-31 (see §2) — Phase 5's exception-effects schema is unblocked.
 > Source of truth: `spec/spec-repetiteur-flux-de-valeur.md`. This plan does not restate the spec; it maps the spec to phases of work.
 
 ---
@@ -24,16 +24,15 @@ Any implementation choice that doesn't serve testing H1–H3 is out of scope (sp
 | A | Tech stack conflict (CLAUDE.md said Next.js/Node/PostgreSQL/Docker; spec forbids a backend) | **Vite + React + TypeScript SPA, no backend.** CLAUDE.md's "Tech stack" line is stale and should be corrected there. | 2026-08-30 |
 | B | `constitution.md` referenced by CLAUDE.md / "Article N" citations, but the file doesn't exist in the repo | **CLAUDE.md's own bullets are the full authority.** No separate constitution.md exists or is expected. Citations like "Article IV" map to the matching CLAUDE.md bullet (e.g. "Time is an injected dependency" for engine/clock rules). | 2026-08-30 |
 | H | Scope of "isolated from day one" (§7) — module boundary/schema only in Phase 1, with real content in Phase 2, or must the real water-damage scenario content also exist in Phase 1? | **Working assumption confirmed: schema-only in Phase 1, real water-damage content in Phase 2.** Phase 2 implements this directly (`src/scenarios/waterDamage.ts`). | 2026-08-30 |
+| C | Is "un seul fichier livrable si possible" (§6) a hard requirement for a single bundled HTML file, or is a normal `dist/` static build acceptable? | **Confirmed: `dist/` static build via `npm run build`/`preview` stays the deliverable.** Matches what's already shipped; spec says "si possible," not mandatory. | 2026-08-31 |
+| D | Does "pas de localStorage requis" (§6) mean persistence is *optional* or *forbidden*? | **Confirmed: forbidden — state stays in-memory only.** Matches the anti-goals ("no backend, browser-only") and the existing Reset button, which discards the whole store rather than persisting it. | 2026-08-31 |
+| E | E1 (expert non-response, 5-day simulated timeout) → "escalade automatique" — escalate to whom, and what state change results? | **Auto-escalate to Supervisor at step 7.** The case is pulled off the expertise wait and routed straight to the Supervisor for a manual call, bypassing steps 5/6. The escalation is logged in the audit trail. | 2026-08-31 |
+| F | E2 ("documents illisibles" → retouche vers le client) — which step(s) can this target, and does it return the case to step 1 or to a distinct "waiting on client" sub-state? | **Distinct "attente client" sub-state.** The case leaves the normal queue into a visible waiting-on-client state, then re-enters at step 1 once the client resubmits — the original audit history is preserved, not superseded. | 2026-08-31 |
+| G | E3 (8-case spike) — do the cases spawn directly into the analyst's queue at step 4, or get created at step 1 and fast-forwarded through steps 2–3? | **Fast-forwarded through steps 1–3.** Cases are created via the normal step-1 synthetic-generation path and auto-chain through triage/coverage-check, so their audit trail is complete and consistent with organically-created cases. | 2026-08-31 |
 
 ## 3. Open questions — answer before the phase that needs them
 
-| # | Question | Blocks | Status |
-|---|---|---|---|
-| C | Is "un seul fichier livrable si possible" (§6) a hard requirement for a single bundled HTML file, or is a normal `dist/` static build (matching CLAUDE.md's `npm run build`/`preview`) acceptable? | Build tooling config (Phase 1) | Open |
-| D | Does "pas de localStorage requis" (§6) mean persistence is *optional* or *forbidden*? | Reset-button / state-persistence design (Phase 1) | Open |
-| E | E1 (expert non-response, 5-day simulated timeout) → "escalade automatique" — escalate to whom, and what state change results? | Exception-effects schema in the decision table (Phase 5) | Open |
-| F | E2 ("documents illisibles" → retouche vers le client) — which step(s) can this target, and does it return the case to step 1 or to a distinct "waiting on client" sub-state? | Exception-effects schema (Phase 5) | Open |
-| G | E3 (8-case spike) — do the cases spawn directly into the analyst's queue at step 4, or get created at step 1 and fast-forwarded through steps 2–3? | State-machine API: can a case be created at an arbitrary step? (Phase 1 API surface, exercised in Phase 5) | Open |
+_None outstanding — all resolved, see §2._
 
 ## 4. Acceptance criteria (§8) → components
 
@@ -77,9 +76,12 @@ Each phase gates on: its listed ACs passing, `npm run typecheck` and `npm run li
 - Closes **AC1** end-to-end and the UI half of **AC3**.
 
 ### Phase 5 — Facilitator panel: clock controls, exception injection, reset
-- Clock controls (pause/play/speed/advance-to-next-event), E1/E2/E3 injection, "Nouveau dossier," reset button.
-- Requires answers to open questions E/F/G before the exception-effects schema is finalized.
-- Closes **AC2** and **AC4** end-to-end.
+- Clock controls (pause/play/speed/advance-to-next-event), "Nouveau dossier," reset button — **shipped** (`db22f99`), closes AC2.
+- E1/E2/E3 injection — **shipped**, per the E/F/G decisions in §2:
+  - E1: targeted case at external-expertise → clock advances by the simulated timeout, then auto-escalates to Supervisor at step 7 (bypassing 5/6); resolved via a dedicated "manual call" UI (no four-eyes check, since no analyst proposed the case).
+  - E2: targeted case at evaluation → "waiting-on-client" sub-state; the Client view surfaces a "Renvoyer les documents" action that re-enters at step 1 and re-chains through triage/coverage-check.
+  - E3: 8 synthetic cases created at step 1 via the normal `generateNewCase()` path, auto-chained through 2–3 same as any organically-created case.
+- Closes **AC4**; AC2 already closed.
 
 ### Phase 6 — Control Tower + workshop help panel
 - Flow map (8 steps, live case-count badges), live KPIs, filterable audit-trail UI, collapsible "Mode d'emploi atelier" panel (spec §9 deliverable #2).
