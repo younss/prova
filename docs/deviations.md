@@ -20,6 +20,10 @@ choice a different implementer could have made differently.
 
 ## 2. A requirement implemented more narrowly than a literal reading suggests
 
+> Update 2026-08-31: this gap is being closed by Phase 7 (`docs/plan.md`), which adds spec §5.7's
+> visual-signal requirement and AC9. Left below as the historical record of when/why it was first
+> accepted, per this file's own purpose.
+
 - **§5.4 "alerte dans la file de l'analyste"**: for E1 and E3, the only visible effect in the
   Analyst's queue is the case's membership changing (a case disappears when E1 escalates it; 8
   new cases appear for E3) — there is no dedicated banner/toast element announcing "an exception

@@ -111,6 +111,28 @@ Le changement de rôle est instantané (aucun login). L'état est unique et part
 - Si l'animateur tente de faire approuver un dossier > 10 000 $ par le même « utilisateur » que l'analyste ayant proposé le montant, le système REFUSE avec un message explicite citant la règle. (Le prototype simule l'identité par le rôle actif + un nom d'utilisateur fictif sélectionnable.)
 - Ce refus est journalisé dans la piste d'audit comme « tentative bloquée ».
 
+### 5.7 Retour visuel et crédibilité (précise §2 « sobre, lisible, crédible »)
+
+> Ajouté après un premier retour d'atelier informel : l'implémentation initiale respectait la
+> lettre de §5.1–§5.6 mais restait fonctionnellement une liste de texte brut, insuffisante pour
+> H1/H2/H3. Cette section rend « sobre, lisible, crédible » testable, sans revenir sur l'anti-objectif
+> de §2 (pas de design system d'entreprise, pas de bibliothèque de composants tierce).
+
+- Chaque dossier affiche un badge de statut coloré correspondant à son étape courante — pas
+  seulement le nom de l'étape en texte brut.
+- Chaque dossier affiche son âge en temps simulé (§5.1) de façon visible partout où il apparaît
+  (Client, Analyste, Superviseur, Tour de contrôle), pas seulement dans un seul écran.
+- L'horloge simulée (§5.1) reste visible en permanence dans toutes les vues, pas seulement dans le
+  panneau animateur.
+- Chaque rôle (Client, Analyste, Superviseur, Animateur, Tour de contrôle) a une identité visuelle
+  distincte (couleur d'accent cohérente) permettant de reconnaître immédiatement, sans lire de
+  texte, quel rôle est actif.
+- Une exception injectée (E1/E2/E3) ou une clôture de dossier produit un signal visuel dans la vue
+  concernée — cohérent avec l'exigence déjà présente en §5.4 (« effets visibles »), qui restait
+  jusqu'ici satisfaite seulement par la piste d'audit.
+- Ce niveau de finition reste dans les limites de §2 : un jeu cohérent de couleurs/badges/espacements
+  suffit, implémenté en CSS simple — pas de nouvelle dépendance, pas de charte graphique.
+
 ## 6. Exigences non fonctionnelles
 
 - **Stack** : application web monopage, React ou HTML/JS vanilla, un seul fichier livrable si possible. Aucune dépendance serveur. État en mémoire uniquement (pas de localStorage requis).
@@ -135,6 +157,7 @@ Le scénario du §3 (étapes, durées, règles, exceptions) doit être défini d
 6. La piste d'audit d'un dossier raconte son histoire complète, en temps simulé, et s'exporte en JSON.
 7. Je peux modifier le seuil de 10 000 $ à 5 000 $ dans la structure déclarative (§7) sans toucher au moteur, et le comportement change.
 8. Une personne qui n'a jamais vu l'outil comprend la Tour de contrôle sans explication de plus de 2 phrases.
+9. Un dossier affiche visiblement son étape (badge coloré) et son âge simulé dans chaque vue où il apparaît ; changer de rôle change visiblement l'identité de couleur de l'interface (§5.7).
 
 ## 9. Livrable attendu du LLM
 

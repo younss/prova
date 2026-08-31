@@ -1,6 +1,6 @@
 # Prova — Implementation Plan (v0.1 prototype)
 
-> Status: Phases and acceptance-criteria mapping agreed. Items C–G resolved 2026-08-31 (see §2) — Phase 5's exception-effects schema is unblocked.
+> Status: Phases 1–6 shipped. Phase 7 (visual credibility pass, spec §5.7/AC9) added 2026-08-31 and in progress.
 > Source of truth: `spec/spec-repetiteur-flux-de-valeur.md`. This plan does not restate the spec; it maps the spec to phases of work.
 
 ---
@@ -46,6 +46,7 @@ _None outstanding — all resolved, see §2._
 | 6 | A case's audit trail tells its full simulated-time story, exports to JSON | Audit log (append-only, simulated timestamps), audit panel (filter by case), JSON export |
 | 7 | Change $10,000 → $5,000 in the declarative structure, no engine touch, behavior changes | Scenario data (named threshold constant), engine (reads threshold from data, never hardcodes it) |
 | 8 | A first-time viewer understands Control Tower without >2 sentences of explanation | Control Tower layout/typography/contrast (§6 "lisibilité projecteur") — **not test-automatable**; validated by watching a real person in a workshop dry-run (H1/H2), not by Vitest |
+| 9 | A case visibly shows its step (colored badge) and simulated age everywhere it appears; switching role visibly changes the interface's color identity (§5.7, added 2026-08-31) | Case status badge component + age formatter, reused across Client/Analyst/Supervisor/Control Tower; role-accent CSS custom properties; a real "carte du flux" component (§5.5) replacing the current plain list; a visible signal on exception injection / case closure |
 
 ## 5. Phased plan
 
@@ -84,8 +85,34 @@ Each phase gates on: its listed ACs passing, `npm run typecheck` and `npm run li
 - Closes **AC4**; AC2 already closed.
 
 ### Phase 6 — Control Tower + workshop help panel
-- Flow map (8 steps, live case-count badges), live KPIs, filterable audit-trail UI, collapsible "Mode d'emploi atelier" panel (spec §9 deliverable #2).
+- Per-step case counts, live KPIs, filterable audit-trail UI, collapsible "Mode d'emploi atelier" panel (spec §9 deliverable #2).
 - Closes **AC5**, **AC6**'s UI, and the design side of **AC8**.
+- Correction (2026-08-31): the "carte du flux" shipped as a plain step/count list, not the
+  animated horizontal map §5.5 actually asks for — a real gap, not just a stretch goal. Phase 7
+  below is the fix.
+
+### Phase 7 — Visual credibility pass (spec §5.7, added 2026-08-31)
+
+Triggered by direct user feedback that the shipped UI "feels dumb" — a fair read: every prior
+phase satisfied its functional acceptance criteria while the interface stayed an undifferentiated
+stack of plain buttons, `<select>`s, and text rows. Nothing currently signals state visually, which
+undercuts H1 (a first-time player should *see* they're in a different role) and H2 (the Control
+Tower is supposed to be the "I want that" moment, and a bullet list doesn't earn that reaction).
+
+- **A real flow map** (§5.5, previously under-built in Phase 6): the 8 steps rendered in a row,
+  each with a count badge, with a visible transition when a case moves between steps.
+- **Case status badges**: a colored badge per case reflecting its current step, replacing plain
+  step-id/label text, reused across Client/Analyst/Supervisor/Control Tower.
+- **Case age display** (§5.1, previously specified but never built): every case shows its
+  simulated age ("ouvert il y a 2 j 4 h"), not just its step.
+- **Persistent clock**: the simulated clock (§5.1) becomes visible in every view, not only the
+  Facilitator panel.
+- **Role-distinct visual identity**: a consistent accent color per role (Client/Analyst/
+  Supervisor/Facilitator/Control Tower), applied via CSS custom properties — no new dependency,
+  no component library, staying inside §2's anti-goal.
+- **Exception/closure signals**: injecting E1/E2/E3 or closing a case produces a visible cue in
+  the affected view, closing the §5.4 gap flagged in `docs/deviations.md` §2.
+- Closes **AC9** (new) and the previously-flagged §5.4 deviation.
 
 ---
 
