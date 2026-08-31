@@ -1,6 +1,6 @@
 # Prova — Implementation Plan (v0.1 prototype)
 
-> Status: Phases and acceptance-criteria mapping agreed. Items C–H below are still open — do not start Phase 2/5 work that depends on them until they're answered. Phase 1 can start once this plan is approved.
+> Status: Phases and acceptance-criteria mapping agreed. Items C–G below are still open — do not start Phase 5 work that depends on them until they're answered. Phase 1 can start once this plan is approved.
 > Source of truth: `spec/spec-repetiteur-flux-de-valeur.md`. This plan does not restate the spec; it maps the spec to phases of work.
 
 ---
@@ -23,6 +23,7 @@ Any implementation choice that doesn't serve testing H1–H3 is out of scope (sp
 |---|---|---|---|
 | A | Tech stack conflict (CLAUDE.md said Next.js/Node/PostgreSQL/Docker; spec forbids a backend) | **Vite + React + TypeScript SPA, no backend.** CLAUDE.md's "Tech stack" line is stale and should be corrected there. | 2026-08-30 |
 | B | `constitution.md` referenced by CLAUDE.md / "Article N" citations, but the file doesn't exist in the repo | **CLAUDE.md's own bullets are the full authority.** No separate constitution.md exists or is expected. Citations like "Article IV" map to the matching CLAUDE.md bullet (e.g. "Time is an injected dependency" for engine/clock rules). | 2026-08-30 |
+| H | Scope of "isolated from day one" (§7) — module boundary/schema only in Phase 1, with real content in Phase 2, or must the real water-damage scenario content also exist in Phase 1? | **Working assumption confirmed: schema-only in Phase 1, real water-damage content in Phase 2.** Phase 2 implements this directly (`src/scenarios/waterDamage.ts`). | 2026-08-30 |
 
 ## 3. Open questions — answer before the phase that needs them
 
@@ -33,7 +34,6 @@ Any implementation choice that doesn't serve testing H1–H3 is out of scope (sp
 | E | E1 (expert non-response, 5-day simulated timeout) → "escalade automatique" — escalate to whom, and what state change results? | Exception-effects schema in the decision table (Phase 5) | Open |
 | F | E2 ("documents illisibles" → retouche vers le client) — which step(s) can this target, and does it return the case to step 1 or to a distinct "waiting on client" sub-state? | Exception-effects schema (Phase 5) | Open |
 | G | E3 (8-case spike) — do the cases spawn directly into the analyst's queue at step 4, or get created at step 1 and fast-forwarded through steps 2–3? | State-machine API: can a case be created at an arbitrary step? (Phase 1 API surface, exercised in Phase 5) | Open |
-| H | Scope of "isolated from day one" (§7) — module boundary/schema only in Phase 1, with real content in Phase 2 (current working assumption), or must the real water-damage scenario content also exist in Phase 1? | Phase 1/2 split | Open (working assumption: schema in Phase 1, content in Phase 2) |
 
 ## 4. Acceptance criteria (§8) → components
 
