@@ -1,16 +1,16 @@
 // Permanent role switcher + active-identity selector (spec §4: "sélecteur de rôle permanent...
 // changement de rôle est instantané"). All views read the same shared CaseStoreProvider state.
 import { useState } from 'react';
-import type { Role } from '../app/caseStore';
-import { ACTIVE_IDENTITY_OPTIONS, ROLE_LABELS } from './identities';
+import { ACTIVE_IDENTITY_OPTIONS, VIEW_TAB_LABELS, type ViewTab } from './identities';
 import { ClientView } from './ClientView';
 import { AnalystView } from './AnalystView';
 import { SupervisorView } from './SupervisorView';
+import { FacilitatorView } from './FacilitatorView';
 
-const ROLES: readonly Role[] = ['client', 'analyst', 'supervisor'];
+const TABS: readonly ViewTab[] = ['client', 'analyst', 'supervisor', 'facilitator'];
 
 export function AppShell() {
-  const [role, setRole] = useState<Role>('client');
+  const [tab, setTab] = useState<ViewTab>('client');
   const [userId, setUserId] = useState<string>(ACTIVE_IDENTITY_OPTIONS[0]!);
 
   return (
@@ -18,14 +18,14 @@ export function AppShell() {
       <header>
         <h1>Prova — Répétiteur de flux de valeur</h1>
         <nav aria-label="Sélecteur de rôle">
-          {ROLES.map((candidate) => (
+          {TABS.map((candidate) => (
             <button
               key={candidate}
               type="button"
-              aria-pressed={candidate === role}
-              onClick={() => setRole(candidate)}
+              aria-pressed={candidate === tab}
+              onClick={() => setTab(candidate)}
             >
-              {ROLE_LABELS[candidate]}
+              {VIEW_TAB_LABELS[candidate]}
             </button>
           ))}
         </nav>
@@ -46,19 +46,22 @@ export function AppShell() {
       </header>
 
       {/*
-        All three views stay mounted and are hidden rather than removed, so switching roles is
-        instant and never discards a view's local state (spec §4) — e.g. a client's declared-case
-        list, or an analyst's in-progress proposal amount.
+        Every view stays mounted and is hidden rather than removed, so switching tabs is instant
+        and never discards local state (spec §4) — e.g. a client's declared-case list, an
+        analyst's in-progress proposal, or the facilitator's clock-ticking effect.
       */}
       <main>
-        <div hidden={role !== 'client'}>
+        <div hidden={tab !== 'client'}>
           <ClientView />
         </div>
-        <div hidden={role !== 'analyst'}>
+        <div hidden={tab !== 'analyst'}>
           <AnalystView userId={userId} />
         </div>
-        <div hidden={role !== 'supervisor'}>
+        <div hidden={tab !== 'supervisor'}>
           <SupervisorView userId={userId} />
+        </div>
+        <div hidden={tab !== 'facilitator'}>
+          <FacilitatorView />
         </div>
       </main>
     </div>

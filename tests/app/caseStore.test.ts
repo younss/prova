@@ -196,6 +196,78 @@ describe('createCaseStore — getScenarioSteps', () => {
   });
 });
 
+describe('createCaseStore — clock controls (spec §5.1)', () => {
+  it('starts paused at speed x1 and time 0', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    expect(store.getSnapshot().clock).toEqual({ now: 0, isPlaying: false, speed: 1 });
+  });
+
+  it('play/pause toggle isPlaying', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    store.playClock();
+    expect(store.getSnapshot().clock.isPlaying).toBe(true);
+    store.pauseClock();
+    expect(store.getSnapshot().clock.isPlaying).toBe(false);
+  });
+
+  it('setClockSpeed changes the speed used by subsequent ticks', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    store.setClockSpeed(500);
+    store.playClock();
+
+    store.tick(10);
+
+    expect(store.getSnapshot().clock.now).toBe(5_000);
+  });
+
+  it('tick() does nothing while paused', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+    store.tick(1_000);
+    expect(store.getSnapshot().clock.now).toBe(0);
+  });
+});
+
+describe('createCaseStore — external expertise auto-resolves via the clock (AC2)', () => {
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+  it('advanceToNextEvent moves a case straight from external-expertise to settlement-proposal', () => {
+    const store = createCaseStore({ random: sequence(0.8, 0) }); // high complexity -> expertise
+    const record = store.declareCase(declarationInput);
+    store.completeEvaluation(record.id, 'analyste-1');
+    expect(store.getCase(record.id)!.state.stepId).toBe('external-expertise');
+
+    store.advanceToNextEvent();
+
+    expect(store.getCase(record.id)!.state.stepId).toBe('settlement-proposal');
+  });
+
+  it('does not resolve before the 3 simulated days elapse, and does after via play+tick', () => {
+    const store = createCaseStore({ random: sequence(0.8, 0) });
+    const record = store.declareCase(declarationInput);
+    store.completeEvaluation(record.id, 'analyste-1');
+
+    store.setClockSpeed(2_000);
+    store.playClock();
+    store.tick(1); // 1 real ms * 2000 = 2000 simulated ms, far short of 3 days
+    expect(store.getCase(record.id)!.state.stepId).toBe('external-expertise');
+
+    store.tick(Math.ceil(THREE_DAYS_MS / 2_000) + 1);
+    expect(store.getCase(record.id)!.state.stepId).toBe('settlement-proposal');
+  });
+});
+
+describe('createCaseStore — generateNewCase (spec §5.2, facilitator "Nouveau dossier")', () => {
+  it('creates a synthetic case using the store’s own random source', () => {
+    const store = createCaseStore({ random: sequence(0, 0) });
+
+    const record = store.generateNewCase();
+
+    expect(record.claimant.fullName.trim().length).toBeGreaterThan(0);
+    expect(record.claimedAmountDollars).toBeGreaterThanOrEqual(800);
+    expect(store.getCase(record.id)).toEqual(record);
+  });
+});
+
 describe('createCaseStore — subscribe/getSnapshot', () => {
   it('notifies subscribers and returns a new snapshot after a mutation', () => {
     const store = createCaseStore({ random: sequence(0, 0) });

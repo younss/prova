@@ -9,7 +9,7 @@ import {
   updateContext,
   type CaseState,
 } from '../engine/stateMachine';
-import { createSimulatedClock } from '../engine/clock';
+import { createSimulatedClock, type ClockSpeed } from '../engine/clock';
 import { createAuditLog, type AuditEntry, type AuditLog } from '../audit/auditLog';
 import { applyTransitionWithAudit, attemptSupervisorApproval } from '../audit/caseAuditTrail';
 import type { FourEyesCheckResult } from '../audit/caseAuditTrail';
@@ -17,6 +17,7 @@ import { createWaterDamageScenario, type WaterDamageCaseContext } from '../scena
 import type { ScenarioStep } from '../scenarios/types';
 import { createSeededRandom, type RandomSource } from '../synthetic/random';
 import { assignComplexityScore, assignCoverageValidity } from '../synthetic/assessCase';
+import { generateSyntheticCase } from '../synthetic/generateCase';
 
 export type Role = 'client' | 'analyst' | 'supervisor';
 
@@ -46,9 +47,16 @@ export interface CaseRecord {
   readonly state: CaseState<WaterDamageCaseContext>;
 }
 
+export interface ClockSnapshot {
+  readonly now: number;
+  readonly isPlaying: boolean;
+  readonly speed: ClockSpeed;
+}
+
 export interface CaseStoreSnapshot {
   readonly cases: readonly CaseRecord[];
   readonly auditEntries: readonly AuditEntry[];
+  readonly clock: ClockSnapshot;
 }
 
 export interface CaseStore {
@@ -63,6 +71,16 @@ export interface CaseStore {
   proposeSettlement(caseId: string, proposedAmountDollars: number, actor: string): void;
   approveSupervisor(caseId: string, approverUserId: string): FourEyesCheckResult;
   refuseSupervisor(caseId: string, approverUserId: string, comment: string): void;
+  /** Generates a synthetic case (spec §5.2's "Nouveau dossier" facilitator button). */
+  generateNewCase(): CaseRecord;
+  playClock(): void;
+  pauseClock(): void;
+  setClockSpeed(speed: ClockSpeed): void;
+  /** Jumps straight to the next scheduled event (e.g. a pending expertise return). */
+  advanceToNextEvent(): void;
+  /** Advances simulated time by `realDeltaMs * current speed`, only while playing. Called by a
+   *  real-time driver (a React effect, not this module) to pace the clock during "Lecture". */
+  tick(realDeltaMs: number): void;
 }
 
 export interface CaseStoreOptions {
@@ -87,10 +105,18 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
   let cases: CaseRecord[] = [];
   let nextCaseNumber = 1;
   const listeners = new Set<() => void>();
-  let snapshot: CaseStoreSnapshot = { cases: [], auditEntries: [] };
+  let snapshot: CaseStoreSnapshot = {
+    cases: [],
+    auditEntries: [],
+    clock: { now: clock.now(), isPlaying: clock.isPlaying(), speed: clock.speed() },
+  };
 
   function publish(): void {
-    snapshot = { cases: [...cases], auditEntries: auditLog.allEntries() };
+    snapshot = {
+      cases: [...cases],
+      auditEntries: auditLog.allEntries(),
+      clock: { now: clock.now(), isPlaying: clock.isPlaying(), speed: clock.speed() },
+    };
     for (const listener of listeners) {
       listener();
     }
@@ -110,9 +136,34 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
   }
 
   /**
+   * When a case reaches a third-party-async step (external-expertise), schedules its return on
+   * the simulated clock (spec AC2: "revient automatiquement après ~3 jours simulés, sans action
+   * humaine") instead of resolving it synchronously — real elapsed simulated time must pass,
+   * driven by playClock()/tick() or advanceToNextEvent().
+   */
+  function scheduleThirdPartyResolution(step: ScenarioStep, caseId: string): void {
+    const dueAt = clock.now() + step.simulatedDurationMs;
+    clock.schedule({ id: `${step.id}-${caseId}`, dueAt }, () => {
+      const record = requireCase(caseId);
+      const [transition] = getAvailableTransitions(scenario, record.state);
+      if (!transition) {
+        return;
+      }
+      let nextState = applyTransitionWithAudit(auditLog, scenario, record.state, transition.id, {
+        caseId,
+        actor: step.actorRole,
+        justification: `${step.label} terminée.`,
+        simulatedTimestampMs: clock.now(),
+      });
+      nextState = autoAdvance(nextState, caseId);
+      replaceCase(caseId, (current) => ({ ...current, state: nextState }));
+    });
+  }
+
+  /**
    * Repeatedly assigns and fires automated steps (spec §3's "automatisé" actor type) until the
-   * case reaches a step that waits on a human or a third-party (external expertise, spec AC2 —
-   * that clock-driven wait is Phase 5's job, not this store's).
+   * case reaches a step that waits on a human, or schedules a third-party-async step's return
+   * on the clock (spec AC2).
    */
   function autoAdvance(
     initialState: CaseState<WaterDamageCaseContext>,
@@ -121,6 +172,10 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     let state = initialState;
     for (;;) {
       const step = findStep(scenario.steps, state.stepId);
+      if (step.actorType === 'third-party-async') {
+        scheduleThirdPartyResolution(step, caseId);
+        return state;
+      }
       if (step.actorType !== 'automated') {
         return state;
       }
@@ -254,6 +309,45 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     return cases.filter((record) => stepIds.includes(record.state.stepId));
   }
 
+  function generateNewCase(): CaseRecord {
+    const generated = generateSyntheticCase(random);
+    return declareCase({
+      fullName: generated.claimant.fullName,
+      address: generated.claimant.address,
+      incidentDate: 'Générée par l’animateur',
+      description: generated.description,
+      claimedAmountDollars: generated.claimedAmountDollars,
+    });
+  }
+
+  function playClock(): void {
+    clock.play();
+    publish();
+  }
+
+  function pauseClock(): void {
+    clock.pause();
+    publish();
+  }
+
+  function setClockSpeed(speed: ClockSpeed): void {
+    clock.setSpeed(speed);
+    publish();
+  }
+
+  function advanceToNextEvent(): void {
+    clock.advanceToNextEvent();
+    publish();
+  }
+
+  function tick(realDeltaMs: number): void {
+    if (!clock.isPlaying()) {
+      return;
+    }
+    clock.advance(realDeltaMs * clock.speed());
+    publish();
+  }
+
   return {
     subscribe(listener) {
       listeners.add(listener);
@@ -269,5 +363,11 @@ export function createCaseStore(options: CaseStoreOptions = {}): CaseStore {
     proposeSettlement,
     approveSupervisor,
     refuseSupervisor,
+    generateNewCase,
+    playClock,
+    pauseClock,
+    setClockSpeed,
+    advanceToNextEvent,
+    tick,
   };
 }
