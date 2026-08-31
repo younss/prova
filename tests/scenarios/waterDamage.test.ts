@@ -29,6 +29,7 @@ describe('createWaterDamageScenario', () => {
       'triage',
       'coverage-check',
       'evaluation',
+      'waiting-on-client',
       'external-expertise',
       'settlement-proposal',
       'supervisor-approval',
@@ -146,6 +147,47 @@ describe('createWaterDamageScenario', () => {
 
       state = applyTransition(scenario, state, 'supervisor-refuses');
       expect(state.stepId).toBe('settlement-proposal');
+    });
+  });
+
+  describe('exception transitions (spec §5.4, docs/plan.md open questions E/F/G)', () => {
+    it('E2: routes an evaluation-stage case to waiting-on-client, and back to declaration on resubmit', () => {
+      const scenario = createWaterDamageScenario();
+      let state = createCase(scenario, baseContext());
+      state = applyTransition(scenario, state, 'submit-declaration');
+      state = applyTransition(scenario, state, 'complete-triage');
+      state = applyTransition(scenario, state, 'coverage-valid');
+      expect(state.stepId).toBe('evaluation');
+
+      state = applyTransition(scenario, state, 'exception-e2-retouche');
+      expect(state.stepId).toBe('waiting-on-client');
+
+      state = applyTransition(scenario, state, 'client-resubmits');
+      expect(state.stepId).toBe('declaration');
+    });
+
+    it('E1: escalates an external-expertise-stage case straight to supervisor-approval', () => {
+      const scenario = createWaterDamageScenario();
+      let state = createCase(scenario, baseContext({ complexityScore: 90 }));
+      state = applyTransition(scenario, state, 'submit-declaration');
+      state = applyTransition(scenario, state, 'complete-triage');
+      state = applyTransition(scenario, state, 'coverage-valid');
+      state = applyTransition(scenario, state, 'evaluation-requires-expertise');
+      expect(state.stepId).toBe('external-expertise');
+
+      state = applyTransition(scenario, state, 'exception-e1-escalation');
+      expect(state.stepId).toBe('supervisor-approval');
+    });
+
+    it('does not let the normal "first available transition" pick logic accidentally choose an exception transition', () => {
+      const scenario = createWaterDamageScenario();
+      let state = createCase(scenario, baseContext({ complexityScore: 10 }));
+      state = applyTransition(scenario, state, 'submit-declaration');
+      state = applyTransition(scenario, state, 'complete-triage');
+      state = applyTransition(scenario, state, 'coverage-valid');
+
+      const [firstAvailable] = getAvailableTransitions(scenario, state);
+      expect(firstAvailable?.id).toBe('evaluation-skips-expertise');
     });
   });
 

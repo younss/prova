@@ -30,6 +30,15 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
+/** E1's "timeout 5 jours simulés" (spec §3) — the simulated time injecting E1 advances the
+ *  shared clock by, before escalating. Named data, not an engine/caseStore constant, so changing
+ *  the timeout only touches this file (spec §7). */
+export const EXPERT_NON_RESPONSE_TIMEOUT_MS = 5 * DAY_MS;
+
+/** E3's "8 dossiers arrivent d'un coup" (spec §3) — how many synthetic cases a single E3
+ *  injection creates. */
+export const VOLUME_SPIKE_CASE_COUNT = 8;
+
 export const WATER_DAMAGE_STEPS: readonly ScenarioStep[] = [
   {
     id: 'declaration',
@@ -58,6 +67,16 @@ export const WATER_DAMAGE_STEPS: readonly ScenarioStep[] = [
     actorRole: 'Analyste sinistres',
     actorType: 'human',
     simulatedDurationMs: 4 * HOUR_MS,
+  },
+  {
+    // E2's destination (spec §3, §5.4): documents illisibles → boucle de retouche vers le
+    // client, distinct from a fresh "declaration" so the original audit history is preserved
+    // rather than superseded (docs/plan.md open question F).
+    id: 'waiting-on-client',
+    label: 'En attente du client (documents à corriger)',
+    actorRole: 'Client',
+    actorType: 'human',
+    simulatedDurationMs: 0,
   },
   {
     id: 'external-expertise',
@@ -97,8 +116,10 @@ export const WATER_DAMAGE_STEPS: readonly ScenarioStep[] = [
 ] as const;
 
 /**
- * Injectable exceptions (spec §3, §5.4). Only their identity/labels are declarative data here —
- * their effects on a running case are Phase 5's exception-effects schema (open questions E/F/G).
+ * Injectable exceptions (spec §3, §5.4). Their identity/labels are declarative data here; their
+ * effects are the `exception-e1-escalation`, `exception-e2-retouche`, and (via
+ * VOLUME_SPIKE_CASE_COUNT repeated case generation) E3 mechanics below and in
+ * src/app/caseStore.ts — see docs/plan.md §2 items E/F/G for the resolved design.
  */
 export const WATER_DAMAGE_EXCEPTIONS: readonly ScenarioException[] = [
   {
@@ -193,6 +214,21 @@ export function createWaterDamageScenario(
       // Spec §4: the Supervisor view needs an explicit "Refuser" action (mandatory comment,
       // enforced by callers as the audit justification), distinct from a four-eyes block.
       { id: 'supervisor-refuses', from: 'supervisor-approval', to: 'settlement-proposal' },
+      // Exception transitions (spec §5.4), appended last so they never shadow the guarded
+      // transitions above in a "pick the first available transition" call (src/app/caseStore.ts'
+      // autoAdvance/completeEvaluation/scheduleThirdPartyResolution) — those still resolve to the
+      // normal transition first, since array order is preserved by getAvailableTransitions().
+      {
+        id: 'exception-e2-retouche',
+        from: 'evaluation',
+        to: 'waiting-on-client',
+      },
+      { id: 'client-resubmits', from: 'waiting-on-client', to: 'declaration' },
+      {
+        id: 'exception-e1-escalation',
+        from: 'external-expertise',
+        to: 'supervisor-approval',
+      },
     ],
   };
 }

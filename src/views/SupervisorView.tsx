@@ -22,8 +22,10 @@ export function SupervisorView({ userId }: SupervisorViewProps) {
         {queue.map((record) => (
           <li key={record.id}>
             <button type="button" onClick={() => setSelectedCaseId(record.id)}>
-              {record.id} — {record.state.context.proposedAmountDollars} $ (proposé par{' '}
-              {record.proposedByUserId})
+              {record.id} —{' '}
+              {record.proposedByUserId
+                ? `${record.state.context.proposedAmountDollars} $ (proposé par ${record.proposedByUserId})`
+                : 'escaladé (E1) — aucun montant proposé'}
             </button>
           </li>
         ))}
@@ -41,6 +43,7 @@ function ApprovalDetail({ caseId, userId }: { caseId: string; userId: string }) 
   const record = store.getCase(caseId);
   const [comment, setComment] = useState('');
   const [refusalMessage, setRefusalMessage] = useState<string | undefined>(undefined);
+  const [escalatedAmount, setEscalatedAmount] = useState('');
 
   if (!record) {
     return null;
@@ -55,6 +58,40 @@ function ApprovalDetail({ caseId, userId }: { caseId: string; userId: string }) 
     store.refuseSupervisor(caseId, userId, comment);
     setComment('');
     setRefusalMessage(undefined);
+  }
+
+  if (!record.proposedByUserId) {
+    // Arrived via injectExceptionE1: no analyst ever proposed an amount, so there is nothing to
+    // separate the approver from — a distinct "manual call" UI, not the four-eyes approval below.
+    return (
+      <div aria-labelledby={`approval-detail-${caseId}`}>
+        <h3 id={`approval-detail-${caseId}`}>Dossier {record.id} — escaladé (E1)</h3>
+        <p role="alert">
+          Ce dossier a été escaladé automatiquement : l'expert externe n'a pas répondu. Aucun
+          montant n'a encore été proposé.
+        </p>
+        <div className="form-field">
+          <label htmlFor={`escalated-amount-${record.id}`}>Montant à fixer ($)</label>
+          <input
+            id={`escalated-amount-${record.id}`}
+            type="number"
+            min={0}
+            value={escalatedAmount}
+            onChange={(event) => setEscalatedAmount(event.target.value)}
+          />
+          <button
+            type="button"
+            disabled={escalatedAmount === ''}
+            onClick={() => {
+              store.resolveEscalation(caseId, Number(escalatedAmount), userId);
+              setEscalatedAmount('');
+            }}
+          >
+            Fixer le montant et approuver
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
